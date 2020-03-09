@@ -1,5 +1,3 @@
-package PACKAGE_NAME;
-
 import java.util.PriorityQueue;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
@@ -9,6 +7,7 @@ import java.io.InputStreamReader;
 import java.io.Reader;
 import java.nio.charset.Charset;
 import java.util.Comparator;
+import java.util.HashMap;
 
 public class Huffman {
 
@@ -28,21 +27,25 @@ public class Huffman {
     }
 
 	private static final char EMPTY_CHARACTER = 0;
-    
+	private static HashMap<Character, String> hashmap = new HashMap<Character, String>();
+	
     public static void main(String[] args) 
     { 
+    	
     	Huffman mHuf = new Huffman();
     	HuffmanNode root = null;
-    	/* Lai notestētu vai strādā koka ielasīšana
+    	PriorityQueue<HuffmanNode> que = null;
+    	/* Lai notestētu vai strādā koka ielasīšana */
     	try {
-			root = mHuf.treeGen("XXXXX",false);
+    		que = mHuf.nodeListGen("char_count.txt",false);
+			root = mHuf.treeGen(que);
 		} catch (IOException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
     	
     	System.out.println(root.data + "a");
-    	printCode(root, "");*/
+    	printCode(root, "");
     	
     }
     // TODO : izņemt šo metodi, bet pēc viņas principa izveidot 
@@ -60,8 +63,9 @@ public class Huffman {
             && ((int)root.character != 0)) { 
   
             // c is the character in the node 
-            System.out.println(root.character + ":" + s); 
-  
+            System.out.println(root.character + ":" + s);
+            //Write to hashmap
+            hashmap.put(root.character,s);  
             return; 
         } 
   
@@ -148,35 +152,37 @@ public class Huffman {
      * @return HuffmanNode - saknes virsotne
      * @throws IOException Ja nevar nolasīt no faila simbolu
      * */
-    public HuffmanNode treeGen(String fPath, Boolean isBinary) throws IOException 
-    {
-    	// Izveido prioritātes rindu, kur elementi 
-    	// tiek kartoti pēc compare metodes(simbola biežuma)
-    	// Padod sākotnējos izmērus(pēc noklusējuma ir 11) un metodi, kas salīdzina elementus
-    	PriorityQueue<HuffmanNode> tree = new PriorityQueue<HuffmanNode>(11, 
-    		new  Comparator<HuffmanNode>()
-    		{
-				public int compare(HuffmanNode arg0, HuffmanNode arg1) {
-					// TODO Auto-generated method stub
-					return arg0.data - arg1.data;
-				}
-    		}
-    	);
-    	
-    	// Atveram failu pirmajai lasīšanai
-    	InputStream is = new FileInputStream(fPath);
-    	Reader fr = new InputStreamReader(is, Charset.forName("UTF-8"));
-    	try
-    	{
-    	if (isBinary == true) binFill(tree, fr); else plainFill(tree, fr);
-    	} catch(Exception e)
-    	{
-    		e.getStackTrace();
-    	}
-    	
-    	// Aizveram faila lasīšanu    	
-    	fr.close();
-
+public PriorityQueue<HuffmanNode> nodeListGen(String fPath, Boolean isBinary) throws IOException{
+	// Izveido prioritātes rindu, kur elementi 
+	// tiek kartoti pēc compare metodes(simbola biežuma)
+	// Padod sākotnējos izmērus(pēc noklusējuma ir 11) un metodi, kas salīdzina elementus
+	PriorityQueue<HuffmanNode> tree = new PriorityQueue<HuffmanNode>(11, 
+		new  Comparator<HuffmanNode>()
+		{
+			public int compare(HuffmanNode arg0, HuffmanNode arg1) {
+				// TODO Auto-generated method stub
+				return arg0.data - arg1.data;
+			}
+		}
+	);
+	
+	// Atveram failu pirmajai lasīšanai
+	InputStream is = new FileInputStream(fPath);
+	Reader fr = new InputStreamReader(is, Charset.forName("UTF-8"));
+	try
+	{
+	if (isBinary == true) binFill(tree, fr); else plainFill(tree, fr);
+	} catch(Exception e)
+	{
+		e.getStackTrace();
+	}
+	
+	// Aizveram faila lasīšanu    	
+	fr.close();
+	return tree;
+	}
+    public HuffmanNode treeGen(PriorityQueue<HuffmanNode> tree) throws IOException 
+    {  	
     	// Pašlaik ir sakārtota rinda ar atsevišķām virsotnēm
     	// Nepieciešams virsotnes apvienot kokā!
     	
@@ -204,5 +210,4 @@ public class Huffman {
     	// atgriežam saknes virsotni.
 		return root;
     }
-
 }
