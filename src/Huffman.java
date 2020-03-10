@@ -1,10 +1,13 @@
 import java.util.PriorityQueue;
+import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.Reader;
+import java.io.UnsupportedEncodingException;
 import java.nio.charset.Charset;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -46,6 +49,15 @@ public class Huffman {
     	
     	System.out.println(root.data + "a");
     	printCode(root, "");
+    	
+    	PriorityQueue<HuffmanNode> que2 = null;
+    	try {
+			que2 = mHuf.nodeListGen("char_count.txt", false);
+			mHuf.fileEncoder(hashmap, "char_count.txt", que2);
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
     	
     }
     // TODO : izņemt šo metodi, bet pēc viņas principa izveidot 
@@ -142,6 +154,68 @@ public class Huffman {
 			}
 		}
     }
+ 
+    
+    public void fileEncoder(HashMap<Character, String> enc_map, String filePath, PriorityQueue<HuffmanNode> que) {
+    	// Jaunā faila nosaukums
+    	String out_filename = "encoded_file.txt";
+    	// Savāc bibliotēku iekš sevis
+    	String frequencies = " ";
+    	while(que.size() > 0) {
+    		HuffmanNode node = que.peek();
+    		que.poll();
+    		frequencies += node.character + " " + node.data + " ";
+    	}
+    	byte[] bytes = null;
+		try {
+			bytes = frequencies.getBytes("UTF-8");
+		} catch (UnsupportedEncodingException e1) {
+			// TODO Auto-generated catch block
+			e1.printStackTrace();
+		}
+		// Iegūst baitus pirms satura (vajadzības gadījumā var pieskaitīt skaitli, lai būtu buffer)
+    	int bytes_to_content = bytes.length + 2;
+    	// Izveido jaunu failu
+    	File output_file = new File(out_filename);
+    	// Atver failu lasīšanai
+    	InputStream is = null;
+		try {
+			is = new FileInputStream(filePath);
+		} catch (FileNotFoundException e1) {
+			// TODO Auto-generated catch block
+			e1.printStackTrace();
+		}
+    	Reader fr = new InputStreamReader(is, Charset.forName("UTF-8"));
+    	int r;
+    	// Faila rakstītājs
+    	String bin_string = "";
+    	String char_string = "";
+    	char character;
+    	try {
+    		FileWriter fwr = new FileWriter(out_filename);		
+        	fwr.write(bytes_to_content + " " + frequencies);
+        	/* Lasa input failu pa vienai rakstzīmei. 
+        	Kad tā sakrīt ar atslēgu no HashMap, tiek ierakstīts kods mainīgajā. */
+        	while ((r = fr.read()) != -1) {
+        		char c = (char) r;
+        		for (Character i : enc_map.keySet()) {
+        			if (c == i)
+        				bin_string += enc_map.get(i);
+        		}
+        	}
+        	// Pēc tam iterē pāri mainīgajam, skalda daļās, katru daļu uz char
+        	for (int i = 0; i < bin_string.length() - 8; i += 8) {
+        		character = (char)Integer.parseInt(bin_string.substring(i, i + 8), 2);
+        		char_string += character;
+        	}
+        	fwr.write(char_string);
+        	fwr.close();
+    	} catch (IOException e) {
+    		System.out.println("Notikusi kļūda");
+    	}
+    	System.out.println("Saspiešana pabeigta");
+    }
+    
     
     
     /**  
