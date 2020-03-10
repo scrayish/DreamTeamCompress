@@ -1,4 +1,5 @@
 import java.util.PriorityQueue;
+import java.io.BufferedReader;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
@@ -31,9 +32,36 @@ public class Huffman {
 	private static final char EMPTY_CHARACTER = 0;
 	private static HashMap<Character, String> hashmap = new HashMap<Character, String>();
 	
-    public static void main(String[] args) throws NoSuchFieldException, SecurityException, IllegalArgumentException, IllegalAccessException 
+    public static void main(String[] args) throws NoSuchFieldException, SecurityException, IllegalArgumentException, IllegalAccessException, IOException 
     { 
-// Code page atkļūdošanai
+        //Enter data using BufferReader 
+        BufferedReader reader =  new BufferedReader(new InputStreamReader(System.in));
+        String filename = null;
+        System.out.println("Vai izvēlēties failu 'char_count.txt'? (y/n)");
+        char ans = (char) System.in.read();
+        if (ans == 'y' || ans == 'Y') {
+        	filename = "char_count.txt";
+        	System.in.read(new byte[System.in.available()]);
+        }
+        else {
+        	System.in.read(new byte[System.in.available()]);
+        	System.out.println("Ievadiet faila nosaukumu:");
+        	filename = reader.readLine();
+        	if (filename.length() == 0) {
+        		filename = "char_count.txt";
+        	}    		
+        }
+        System.out.println("Faila izmantojamā faila nosaukums: " + filename);
+        System.in.read(new byte[System.in.available()]);
+    	System.out.println("Ievadiet beigu faila nosaukumu:");
+    	String result_filename = reader.readLine();
+    	if (result_filename.length() == 0) {
+    		result_filename = "char_count_out.txt";
+    	}
+		System.out.println("Beigu faila nosaukums: " + result_filename);
+       
+        
+     // Code page atkļūdošanai
 //    	System.setProperty("file.encoding","UTF-8");
 //    	Field charset = Charset.class.getDeclaredField("defaultCharset");
 //    	charset.setAccessible(true);
@@ -42,22 +70,60 @@ public class Huffman {
     	HuffmanNode root = null;
     	PriorityQueue<HuffmanNode> que = null;
     	PriorityQueue<HuffmanNode> que2 = null;
-    	try {
-    		que = mHuf.nodeListGen("char_count.txt",false);
-    		que2 = new PriorityQueue<HuffmanNode>(que);
-			root = mHuf.treeGen(que);
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
+     
+        
+    	boolean end = false;
+    	while(true) {
+       
+    	 System.out.println("Izvēlēties operāciju: (0 - pabeigt darbību; 1 - saspiest; 2 - dekodēt)");
+         ans = (char) System.in.read();
+         System.in.read(new byte[System.in.available()]);
+        switch (ans) {
+        case '1':
+        	//encode
+        	try {
+        		que = mHuf.nodeListGen(filename,false);
+        		que2 = new PriorityQueue<HuffmanNode>(que);
+    			root = mHuf.treeGen(que);
+    			printCode(root, "");
+    		} catch (IOException e) {
+    			e.printStackTrace();
+    		}        	
+        	try {
+    			mHuf.fileEncoder(hashmap, filename, que2, result_filename);
+    		} catch (IOException e) {
+    			e.printStackTrace();
+    		}
+        	end = true;
+        	break;
+        case '2':
+        	//decode
+        	try {
+        		que = mHuf.nodeListGen(filename,true);
+        		que2 = new PriorityQueue<HuffmanNode>(que);
+    			root = mHuf.treeGen(que);
+    		} catch (IOException e) {
+    			e.printStackTrace();
+    		}
+        	end = true;
+        	break;
+        case '0':
+        	end = true;
+        	break;
+        default:
+        	System.out.println("Ievadītā operācija neeksistē, mēģiniet vēlreiz");
+        	break;
+        }
+        if (end) {
+        	System.out.println("Darbība beigta");
+        	break;
+        }
+    	}
     	
-    	System.out.println(root.data + "a");
-    	printCode(root, "");
+    	
+
   
-    	try {
-			mHuf.fileEncoder(hashmap, "char_count.txt", que2);
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
+    	
     	
     }
     // TODO : izņemt metodi, bet pēc viņas principa izveidot 
@@ -154,9 +220,9 @@ public class Huffman {
 		}
     }
  
-    public void fileEncoder(HashMap<Character, String> enc_map, String filePath, PriorityQueue<HuffmanNode> que) throws IOException {
+    public void fileEncoder(HashMap<Character, String> enc_map, String filePath, PriorityQueue<HuffmanNode> que, String resultFilePath) throws IOException {
     	// Jaunā faila nosaukums
-    	String out_filename = "encoded_file.txt";
+    	String out_filename = resultFilePath;
     	// Savāc bibliotēku iekš sevis
     	String frequencies = " ";
     	while(que.size() > 0) {
