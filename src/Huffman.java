@@ -1,7 +1,7 @@
 import java.util.PriorityQueue;
-import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
@@ -21,7 +21,6 @@ public class Huffman {
         HuffmanNode right;
         
         public HuffmanNode(int i, char c) {
-			// TODO Auto-generated constructor stub
         	this.data = i;
         	this.character = c;
         	left = null;
@@ -32,35 +31,36 @@ public class Huffman {
 	private static final char EMPTY_CHARACTER = 0;
 	private static HashMap<Character, String> hashmap = new HashMap<Character, String>();
 	
-    public static void main(String[] args) 
+    public static void main(String[] args) throws NoSuchFieldException, SecurityException, IllegalArgumentException, IllegalAccessException 
     { 
-    	
+// Code page atkļūdošanai
+//    	System.setProperty("file.encoding","UTF-8");
+//    	Field charset = Charset.class.getDeclaredField("defaultCharset");
+//    	charset.setAccessible(true);
+//    	charset.set(null,null);
     	Huffman mHuf = new Huffman();
     	HuffmanNode root = null;
     	PriorityQueue<HuffmanNode> que = null;
-    	/* Lai notestētu vai strādā koka ielasīšana */
+    	PriorityQueue<HuffmanNode> que2 = null;
     	try {
     		que = mHuf.nodeListGen("char_count.txt",false);
+    		que2 = new PriorityQueue<HuffmanNode>(que);
 			root = mHuf.treeGen(que);
 		} catch (IOException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
     	
     	System.out.println(root.data + "a");
     	printCode(root, "");
-    	
-    	PriorityQueue<HuffmanNode> que2 = null;
+  
     	try {
-			que2 = mHuf.nodeListGen("char_count.txt", false);
 			mHuf.fileEncoder(hashmap, "char_count.txt", que2);
 		} catch (IOException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
     	
     }
-    // TODO : izņemt šo metodi, bet pēc viņas principa izveidot 
+    // TODO : izņemt metodi, bet pēc viņas principa izveidot 
     // HashMap, lai vienkāršāk Encode failu
     public static void printCode(HuffmanNode root, String s) 
     { 
@@ -96,7 +96,7 @@ public class Huffman {
     	String sBinTotal = "";
     	
     	// Pārlasām pāri vārdnīcas ievaddatiem
-    	// Nolasām vārdnīcas kopējo baitu izmēru
+    	// Nolasām kopējo baitu izmēru
 		while ((i = fr.read()) != -1 && (char) i != ' ')
 		{
 			sBinTotal += (char) i;
@@ -107,8 +107,8 @@ public class Huffman {
 		while (pos < iBinTotal)
 		{
 			sBinTotal = "";
-			i = fr.read(); // nolasām simbolu
-			pos++; // palielinām apstrādāto baitu
+			i = fr.read(); // nolas simbolu
+			pos++; // palielinām apstrādāto  baitu
 			// Ja varējām nolasīt simbolu, tad pieglabājam
 			final char nodeC = (i != -1) ? (char) i : 0;
 			
@@ -124,7 +124,7 @@ public class Huffman {
 			
 			if (tree.stream().filter(node -> node.character == nodeC).count() > 0)
 			{
-				throw new Exception("Kļūda nolasot failu : Atkārtojas simboli vārdnīca!");
+				throw new Exception("Kļūda nolasot failu : Atkārtojas simboli vārdnīcā!");
 			}
 			else
 			{
@@ -139,9 +139,8 @@ public class Huffman {
 		while ((i = fr.read()) != -1)
 		{
 			final char ch = (char) i;
-			// Ja kādai virsotnei piemīt šis simbols, tad mēs palielinām biežumu par 1, citādi
+			// Ja kādai virsotnei pieder tekošais simbols, tad mēs palielinām biežumu par 1, citādi
 			// pievienojam to rindai.
-			//TODO : replace 'c' with iterative symbol from file read
 			if (tree.stream().filter(node -> node.character == ch).count() > 0 ) 
 			{
 				tree.parallelStream()
@@ -155,8 +154,7 @@ public class Huffman {
 		}
     }
  
-    
-    public void fileEncoder(HashMap<Character, String> enc_map, String filePath, PriorityQueue<HuffmanNode> que) {
+    public void fileEncoder(HashMap<Character, String> enc_map, String filePath, PriorityQueue<HuffmanNode> que) throws IOException {
     	// Jaunā faila nosaukums
     	String out_filename = "encoded_file.txt";
     	// Savāc bibliotēku iekš sevis
@@ -170,49 +168,61 @@ public class Huffman {
 		try {
 			bytes = frequencies.getBytes("UTF-8");
 		} catch (UnsupportedEncodingException e1) {
-			// TODO Auto-generated catch block
 			e1.printStackTrace();
 		}
 		// Iegūst baitus pirms satura (vajadzības gadījumā var pieskaitīt skaitli, lai būtu buffer)
-    	int bytes_to_content = bytes.length + 2;
-    	// Izveido jaunu failu
-    	File output_file = new File(out_filename);
+    	int bytes_to_content = bytes.length;//Šeit jādod baiti, cik skaitlim cipari nevis vnk 2
+    	int old_content = bytes_to_content;
+    	do {
+    	old_content = bytes_to_content;	
+    	bytes_to_content += Integer.toString(bytes_to_content).length();
+    	}while(Integer.toString(old_content).length() != Integer.toString(bytes_to_content).length());
+    	
     	// Atver failu lasīšanai
     	InputStream is = null;
 		try {
 			is = new FileInputStream(filePath);
 		} catch (FileNotFoundException e1) {
-			// TODO Auto-generated catch block
 			e1.printStackTrace();
 		}
     	Reader fr = new InputStreamReader(is, Charset.forName("UTF-8"));
     	int r;
     	// Faila rakstītājs
     	String bin_string = "";
-    	String char_string = "";
-    	char character;
     	try {
     		FileWriter fwr = new FileWriter(out_filename);		
-        	fwr.write(bytes_to_content + " " + frequencies);
+        	fwr.write(bytes_to_content + frequencies);//lieks space, kas arī pieliek +1 baitu izmēros
         	/* Lasa input failu pa vienai rakstzīmei. 
         	Kad tā sakrīt ar atslēgu no HashMap, tiek ierakstīts kods mainīgajā. */
         	while ((r = fr.read()) != -1) {
-        		char c = (char) r;
-        		for (Character i : enc_map.keySet()) {
-        			if (c == i)
+        		// mūsu hashmap principā ir masīvs, kur indeksi ir simboli
+        		// līdz ar to nav nepieciešams veidot foreach ciklu.
+        		/*char c = (char) r;
+        		for (Character i : enc_map.keySet()) {//get no hashmap dabu pec asociativa array principa
+        			if (c == i) // lieks cikls un parbaude
         				bin_string += enc_map.get(i);
-        		}
+        		}*/
+        		
+        		bin_string += enc_map.get((char)r);
         	}
-        	// Pēc tam iterē pāri mainīgajam, skalda daļās, katru daļu uz char
-        	for (int i = 0; i < bin_string.length() - 8; i += 8) {
-        		character = (char)Integer.parseInt(bin_string.substring(i, i + 8), 2);
-        		char_string += character;
-        	}
-        	fwr.write(char_string);
         	fwr.close();
+        	// aizveram simbolu rakstīšanu un atveram bināru rakstīšanu 
+        	// ar karogu true priekš append, lai rakstītu klāt, nevis pārrakstītu
+        	FileOutputStream fos = new FileOutputStream(out_filename, true);
+        	// Pēc tam iterē pāri mainīgajam, skalda daļās, katru daļu uz baitu
+        	// sākotneji bināro stringu uztaisam uz integer, pēc tam nokāstojam uz baitu
+        	// jo baitu naturāli var izveidot tikai vērtībām līdz 127(0b01111111)
+        	
+        	for (int i = 0; i < bin_string.length(); i += 8) {
+        		fos.write((byte)Integer.parseInt(bin_string.substring(i, i+8), 2));
+        	}
+        	fos.close();
+        	
     	} catch (IOException e) {
     		System.out.println("Notikusi kļūda");
     	}
+    	
+    	fr.close(); // aizstaisam lasīšanu, iepriekš aizmirsi pielikt.
     	System.out.println("Saspiešana pabeigta");
     }
     
@@ -227,14 +237,13 @@ public class Huffman {
      * @throws IOException Ja nevar nolasīt no faila simbolu
      * */
 public PriorityQueue<HuffmanNode> nodeListGen(String fPath, Boolean isBinary) throws IOException{
-	// Izveido prioritātes rindu, kur elementi 
+	//Izveido prioritātes rindu, kur elementi 
 	// tiek kartoti pēc compare metodes(simbola biežuma)
 	// Padod sākotnējos izmērus(pēc noklusējuma ir 11) un metodi, kas salīdzina elementus
 	PriorityQueue<HuffmanNode> tree = new PriorityQueue<HuffmanNode>(11, 
 		new  Comparator<HuffmanNode>()
 		{
 			public int compare(HuffmanNode arg0, HuffmanNode arg1) {
-				// TODO Auto-generated method stub
 				return arg0.data - arg1.data;
 			}
 		}
@@ -251,7 +260,7 @@ public PriorityQueue<HuffmanNode> nodeListGen(String fPath, Boolean isBinary) th
 		e.getStackTrace();
 	}
 	
-	// Aizveram faila lasīšanu    	
+	// Aizveram faila lasīšanu   	
 	fr.close();
 	return tree;
 	}
