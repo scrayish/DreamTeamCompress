@@ -323,7 +323,7 @@ e1.printStackTrace();
         test_byte = bin_string.substring(i, i+8);
         }
         else {
-        test_byte = bin_string.substring(i, bin_string.length()-1);
+        test_byte = bin_string.substring(i, bin_string.length());
         while (test_byte.length()<8) {
         test_byte += "0";
         }
