@@ -1,7 +1,11 @@
 import java.util.PriorityQueue;
+import java.util.stream.Collector;
+import java.util.stream.Collectors;
+import java.io.BufferedReader;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
+import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
@@ -9,8 +13,13 @@ import java.io.InputStreamReader;
 import java.io.Reader;
 import java.io.UnsupportedEncodingException;
 import java.nio.charset.Charset;
+import java.text.Collator;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
 
 public class Huffman {
 
@@ -26,12 +35,38 @@ public class Huffman {
         	left = null;
         	right = null;
 		}
-    }
 
+		public HuffmanNode(HuffmanNode root) {
+        	this.data = root.data;
+        	this.character = root.character;
+        	left = root.left;
+        	right = root.right;
+		}
+    }
+    
+    class ListComparator implements Comparator<HuffmanNode> { 
+        public int compare(HuffmanNode arg0, HuffmanNode arg1) 
+        { 
+    			
+    		if (arg0.data<arg1.data)
+				return -1;
+			if (arg0.data>arg1.data)
+				return 1;
+			if (arg0.data == arg1.data){
+				
+				if (arg0.character > arg1.character)
+					return 1;
+				if (arg0.character < arg1.character)
+					return -1;
+			}
+			return 0;
+    	}
+    } 
+    
 	private static final char EMPTY_CHARACTER = 0;
 	private static HashMap<Character, String> hashmap = new HashMap<Character, String>();
 	
-    public static void main(String[] args) throws NoSuchFieldException, SecurityException, IllegalArgumentException, IllegalAccessException 
+    public static void main(String[] args) throws NoSuchFieldException, SecurityException, IllegalArgumentException, IllegalAccessException, IOException 
     { 
 // Code page atkļūdošanai
 //    	System.setProperty("file.encoding","UTF-8");
@@ -40,24 +75,39 @@ public class Huffman {
 //    	charset.set(null,null);
     	Huffman mHuf = new Huffman();
     	HuffmanNode root = null;
-    	PriorityQueue<HuffmanNode> que = null;
-    	PriorityQueue<HuffmanNode> que2 = null;
+    	List<HuffmanNode> nodeList = new ArrayList<HuffmanNode>();
+    	List<HuffmanNode> nodeList2 = null;
+    	
     	try {
-    		que = mHuf.nodeListGen("char_count.txt",false);
-    		que2 = new PriorityQueue<HuffmanNode>(que);
-			root = mHuf.treeGen(que);
+    		nodeList = mHuf.nodeListGen("C:\\Users\\marti\\git\\DreamTeamCompress\\src\\test.txt",false);
+    		nodeList2 = new ArrayList<HuffmanNode>(nodeList);
+			root = mHuf.treeGen(nodeList);
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
     	
     	System.out.println(root.data + "a");
     	printCode(root, "");
-  
+    	
     	try {
-			mHuf.fileEncoder(hashmap, "char_count.txt", que2);
+			mHuf.fileEncoder(hashmap, "C:\\Users\\marti\\git\\DreamTeamCompress\\src\\test.txt", nodeList2);
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
+    	
+    	try {
+    		nodeList = mHuf.nodeListGen("C:\\Users\\marti\\git\\DreamTeamCompress\\src\\encoded_file.txt",true);
+    		nodeList2 = new ArrayList<HuffmanNode>(nodeList);
+			root = mHuf.treeGen(nodeList);
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+    	
+    	printCode(root, "");
+    	
+    	mHuf.fileDecoder("C:\\Users\\marti\\git\\DreamTeamCompress\\src\\encoded_file.txt", root);
+    	
+
     	
     }
     // TODO : izņemt metodi, bet pēc viņas principa izveidot 
@@ -90,7 +140,7 @@ public class Huffman {
         printCode(root.right, s + "1"); 
     }
     // Aizpilda koka sarakstu no saspiesta faila
-    public void binFill(PriorityQueue<HuffmanNode> tree, Reader fr) throws Exception
+    public void binFill(List<HuffmanNode> tree, Reader fr) throws Exception
     {
     	int i, iBinTotal, nodeF = 0, pos = 0;
     	String sBinTotal = "";
@@ -133,9 +183,10 @@ public class Huffman {
 		}
     }
     // Aizpilda koka sarakstu no plain-text faila
-    public void plainFill(PriorityQueue<HuffmanNode> tree, Reader fr) throws IOException
+    public void plainFill(List<HuffmanNode> tree, Reader fr) throws IOException
     {	
     	int i;
+    	   	
 		while ((i = fr.read()) != -1)
 		{
 			final char ch = (char) i;
@@ -152,18 +203,19 @@ public class Huffman {
 				tree.add(new HuffmanNode(1, ch));
 			}
 		}
+		
+		
     }
  
-    public void fileEncoder(HashMap<Character, String> enc_map, String filePath, PriorityQueue<HuffmanNode> que) throws IOException {
+    public void fileEncoder(HashMap<Character, String> enc_map, String filePath, List<HuffmanNode> que) throws IOException {
     	// Jaunā faila nosaukums
-    	String out_filename = "encoded_file.txt";
+    	String out_filename = "C:\\Users\\marti\\git\\DreamTeamCompress\\src\\encoded_file.txt";
     	// Savāc bibliotēku iekš sevis
     	String frequencies = " ";
-    	while(que.size() > 0) {
-    		HuffmanNode node = que.peek();
-    		que.poll();
+    	for (HuffmanNode node : que) {
     		frequencies += node.character + " " + node.data + " ";
     	}
+    	
     	byte[] bytes = null;
 		try {
 			bytes = frequencies.getBytes("UTF-8");
@@ -214,7 +266,18 @@ public class Huffman {
         	// jo baitu naturāli var izveidot tikai vērtībām līdz 127(0b01111111)
         	
         	for (int i = 0; i < bin_string.length(); i += 8) {
-        		fos.write((byte)Integer.parseInt(bin_string.substring(i, i+8), 2));
+        		String test_byte;
+        		if (i+8<bin_string.length()) {
+        			test_byte = bin_string.substring(i, i+8);
+        		}
+        		else {
+        			test_byte = bin_string.substring(i, bin_string.length()-1);
+        			while (test_byte.length()<8) {
+        				test_byte += "0";
+        			}
+        		}
+        		
+        		fos.write((byte)Integer.parseInt(test_byte, 2));
         	}
         	fos.close();
         	
@@ -226,7 +289,75 @@ public class Huffman {
     	System.out.println("Saspiešana pabeigta");
     }
     
-    
+    public void fileDecoder(String filePath, HuffmanNode root) throws IOException 
+    {
+    	HuffmanNode curRoot = new HuffmanNode(root);
+    	String character="";
+    	String newFileName="decoded_file.txt";
+    	int c;		
+    	FileReader fr=new FileReader(filePath); 
+    	BufferedReader br=new BufferedReader(fr);
+    	while((c = br.read()) != -1 ) {   
+    		
+    		if ((char)c!=' ')
+    		character += (char) c;
+    		else break;
+    	}
+    	fr.close();
+    	FileInputStream fin = null;
+    	FileWriter wr=null;
+    	byte byteStream[] = null;
+    	byte curentByteStream;
+    	char symbol; 
+    	 try {    
+    		  fin = new FileInputStream(filePath);
+    		  wr= new FileWriter(newFileName);
+    		  fin.skip((long)Integer.parseInt(character));
+    		  int mask = -128;
+             while(fin.available()>0)
+             {	 
+             curentByteStream = (byte) fin.read();
+            	 //curentByteStream=byteStream[0];
+            	   for (int j = 0; j <8 ; j++)
+            	   {
+            		   
+            		   boolean value = (curentByteStream & (byte)mask ) != 0;
+            		   
+            	      if (curRoot.left== null && curRoot.right== null && ((int)curRoot.character != 0))
+            	      {
+            	    	  wr.write(curRoot.character);
+            	    	  curRoot=root;
+            	    	  j--;
+            	    	  //mask = (byte)(mask<<1);
+            	      }
+            	      else
+            	      {
+            	    	  if(value)
+            	    	  {
+            	    		  curRoot=curRoot.right;
+            	    		  mask = (byte)((mask&0xff)>>>1);
+            	    	  }
+            	    	  else
+            	    	  {
+            	    		  curRoot=curRoot.left;
+            	    		  mask = (byte)((mask&0xff)>>>1);
+            	    	  }
+            	      }
+            	      
+            	   }
+     	    	  mask = -128;
+            	   
+             }
+             wr.close();
+             fin.close();
+         }
+         catch (FileNotFoundException e) {
+             System.out.println("File not found" + e);
+         }
+         catch (IOException ioe) {
+             System.out.println("Exception while reading file " + ioe);
+         }
+    }   
     
     /**  
      * <h1>Metode, kas nolasa failu, iegūst simbolu biežumus un izveido koku.</h1>
@@ -236,18 +367,11 @@ public class Huffman {
      * @return HuffmanNode - saknes virsotne
      * @throws IOException Ja nevar nolasīt no faila simbolu
      * */
-public PriorityQueue<HuffmanNode> nodeListGen(String fPath, Boolean isBinary) throws IOException{
+public List<HuffmanNode> nodeListGen(String fPath, Boolean isBinary) throws IOException{
 	//Izveido prioritātes rindu, kur elementi 
 	// tiek kartoti pēc compare metodes(simbola biežuma)
 	// Padod sākotnējos izmērus(pēc noklusējuma ir 11) un metodi, kas salīdzina elementus
-	PriorityQueue<HuffmanNode> tree = new PriorityQueue<HuffmanNode>(11, 
-		new  Comparator<HuffmanNode>()
-		{
-			public int compare(HuffmanNode arg0, HuffmanNode arg1) {
-				return arg0.data - arg1.data;
-			}
-		}
-	);
+	List<HuffmanNode> tree = new ArrayList<HuffmanNode>();
 	
 	// Atveram failu pirmajai lasīšanai
 	InputStream is = new FileInputStream(fPath);
@@ -262,25 +386,31 @@ public PriorityQueue<HuffmanNode> nodeListGen(String fPath, Boolean isBinary) th
 	
 	// Aizveram faila lasīšanu   	
 	fr.close();
+	
+	tree.sort(new ListComparator());
+	
 	return tree;
 	}
-    public HuffmanNode treeGen(PriorityQueue<HuffmanNode> tree) throws IOException 
+
+    public HuffmanNode treeGen(List<HuffmanNode> tree) throws IOException 
     {  	
     	// Pašlaik ir sakārtota rinda ar atsevišķām virsotnēm
     	// Nepieciešams virsotnes apvienot kokā!
     	
     	// Izveidojam saknes virsotni, no kuras sāks lasīt šifrētās vērtības
     	HuffmanNode root = null;
-    	
+    	    	
     	// Izveidojam koka struktūru
     	while (tree.size()>1)
     	{
-    		HuffmanNode one = tree.peek();
-    		tree.poll();
     		
-    		HuffmanNode two = tree.peek();
-    		tree.poll();
+        	
+    		HuffmanNode one = tree.get(0);
+    		tree.remove(0);
     		
+    		HuffmanNode two = tree.get(0);
+    		tree.remove(0);
+    		    		
     		HuffmanNode combo = new HuffmanNode(0, EMPTY_CHARACTER);
     		combo.data = one.data + two.data;
     		combo.left = one;
@@ -288,6 +418,8 @@ public PriorityQueue<HuffmanNode> nodeListGen(String fPath, Boolean isBinary) th
     		
     		root = combo;
     		tree.add(combo);
+    		
+    		tree.sort(new ListComparator());
     	}
     	
     	// atgriežam saknes virsotni.
