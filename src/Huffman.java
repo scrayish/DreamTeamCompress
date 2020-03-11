@@ -1,8 +1,11 @@
 import java.util.PriorityQueue;
+import java.util.stream.Collector;
+import java.util.stream.Collectors;
 import java.io.BufferedReader;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
+import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
@@ -10,8 +13,13 @@ import java.io.InputStreamReader;
 import java.io.Reader;
 import java.io.UnsupportedEncodingException;
 import java.nio.charset.Charset;
+import java.text.Collator;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
 
 public class Huffman {
 
@@ -27,12 +35,37 @@ public class Huffman {
 			left = null;
 			right = null;
 		}
-	}
 
+		public HuffmanNode(HuffmanNode root) {
+        	this.data = root.data;
+        	this.character = root.character;
+        	left = root.left;
+        	right = root.right;
+		}
+    }
+    
+    class ListComparator implements Comparator<HuffmanNode> { 
+        public int compare(HuffmanNode arg0, HuffmanNode arg1) 
+        { 
+    			
+    		if (arg0.data<arg1.data)
+				return -1;
+			if (arg0.data>arg1.data)
+				return 1;
+			if (arg0.data == arg1.data){
+				
+				if (arg0.character > arg1.character)
+					return 1;
+				if (arg0.character < arg1.character)
+					return -1;
+			}
+			return 0;
+    	}
+    } 
+    
 	private static final char EMPTY_CHARACTER = 0;
 	private static HashMap<Character, String> hashmap = new HashMap<Character, String>();
-
-	public static void main(String[] args) throws NoSuchFieldException, SecurityException, IllegalArgumentException,
+public static void main(String[] args) throws NoSuchFieldException, SecurityException, IllegalArgumentException,
 			IllegalAccessException, IOException {
 		// Enter data using BufferReader
 		BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
@@ -66,8 +99,8 @@ public class Huffman {
 		// charset.set(null,null);
 		Huffman mHuf = new Huffman();
 		HuffmanNode root = null;
-		PriorityQueue<HuffmanNode> que = null;
-		PriorityQueue<HuffmanNode> que2 = null;
+    	List<HuffmanNode> nodeList = new ArrayList<HuffmanNode>();
+    	List<HuffmanNode> nodeList2 = null;
 
 		boolean end = false;
 		while (true) {
@@ -79,15 +112,15 @@ public class Huffman {
 			case '1':
 				// encode
 				try {
-					que = mHuf.nodeListGen(filename, false);
-					que2 = new PriorityQueue<HuffmanNode>(que);
-					root = mHuf.treeGen(que);
-					printCode(root, "");
+    		nodeList = mHuf.nodeListGen(f,false);
+    		nodeList2 = new ArrayList<HuffmanNode>(nodeList);
+            root = mHuf.treeGen(nodeList);
+			printCode(root, "");
 				} catch (IOException e) {
 					e.printStackTrace();
 				}
 				try {
-					mHuf.fileEncoder(hashmap, filename, que2, result_filename);
+					mHuf.fileEncoder(hashmap, filename, nodeList2, result_filename);
 				} catch (IOException e) {
 					e.printStackTrace();
 				}
@@ -96,12 +129,19 @@ public class Huffman {
 			case '2':
 				// decode
 				try {
-					que = mHuf.nodeListGen(filename, true);
-					que2 = new PriorityQueue<HuffmanNode>(que);
-					root = mHuf.treeGen(que);
+						nodeList = mHuf.nodeListGen(filename,true);
+    		nodeList2 = new ArrayList<HuffmanNode>(nodeList);
+			root = mHuf.treeGen(nodeList);
+            printCode(root, "");
 				} catch (IOException e) {
 					e.printStackTrace();
 				}
+                try {
+			mHuf.fileDecoder(filename, root);
+    	
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
 				end = true;
 				break;
 			case '0':
@@ -119,7 +159,6 @@ public class Huffman {
 
 	}
 
-	// TODO : izņemt metodi, bet pēc viņas principa izveidot
 	// HashMap, lai vienkāršāk Encode failu
 	public static void printCode(HuffmanNode root, String s) {
 
@@ -129,7 +168,7 @@ public class Huffman {
 		if (root.left == null && root.right == null && ((int) root.character != 0)) {
 
 			// c is the character in the node
-			System.out.println(root.character + ":" + s);
+			//System.out.println(root.character + ":" + s);
 			// Write to hashmap
 			hashmap.put(root.character, s);
 			return;
@@ -151,8 +190,7 @@ public class Huffman {
 
 		// Pārlasām pāri vārdnīcas ievaddatiem
 		// Nolasām kopējo baitu izmēru
-		while ((i = fr.read()) != -1 && (char) i != ' ') {
-			sBinTotal += (char) i;
+		while ((i = fr.read()) != -1 && (char) i != ' ') {			sBinTotal += (char) i;
 			pos++;
 		}
 		iBinTotal = Integer.parseInt(sBinTotal);
