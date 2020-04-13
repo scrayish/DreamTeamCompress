@@ -16,7 +16,8 @@ public class LZ4 {
 		byte[] outData;
 	}
 	
-	// Globālie mainīgie.
+	// GlobÄ�lie mainÄ«gie.
+	static final int MAX_INT = 255;
 	static final int MIN_MATCH = 4;
 	static final int MAX_DISTANCE_LOG = 16;
 	static final int MAX_DISTANCE = 1 << MAX_DISTANCE_LOG;
@@ -48,7 +49,7 @@ public class LZ4 {
 		int srcSize = srcBytes.length;
 		int srcLimit = srcSize - MIN_MATCH;
 		int destPos = 0;
-		int seq = 0; // Pretty much slīdošais logs.
+		int seq = 0; // Pretty much slÄ«doÅ¡ais logs.
 		int hashVal = 0;
 		int refPos = 0;
 		int distance = 0;
@@ -103,7 +104,7 @@ public class LZ4 {
 				dest[runCodePos] = (byte) (literalLength << ML_BITS);
 			}
 			
-			// Kopē Literals
+			// KopÄ“ Literals
 			System.arraycopy(srcBytes, anchor, dest, destPos, literalLength);
 			destPos += literalLength;
 			
@@ -114,7 +115,7 @@ public class LZ4 {
 			dest[destPos++] = (byte) (distance & 0xFF);
 			dest[destPos++] = (byte) ((distance >> 8) & 0xFF);
 			
-			// KKāds meme
+			// KKÄ�ds meme
 			srcPos += MIN_MATCH;
 			refPos += MIN_MATCH;
 			anchor = srcPos;
@@ -125,7 +126,7 @@ public class LZ4 {
 			
 			matchLength = srcPos - anchor;
 			
-			// Iekodē match length
+			// IekodÄ“ match length
 			if (matchLength > (ML_MASK - 1)) {
 				dest[runCodePos] |= (byte) ML_MASK;
 				destPos = encodeLength(dest, destPos, matchLength - ML_MASK);
@@ -150,13 +151,13 @@ public class LZ4 {
 		return destPos;
 	}
 	
-	// Inicializē posHashTable
+	// InicializÄ“ posHashTable
 	public void initializeCompression() {
 		if (posHashTable == null) {
 			posHashTable = new int[HASH_TABLE_SIZE];
 		}
 		
-		Arrays.fill(posHashTable, -MAX_DISTANCE);
+		Arrays.fill(posHashTable, - MAX_DISTANCE);
 	}
 	
 	private static final int encodeLength(byte[] dest, int destPos, int length) {
@@ -164,9 +165,9 @@ public class LZ4 {
             throw new IllegalArgumentException();
         }
 
-        while (length > 254) {
-            length -= 255;
-            dest[destPos++] = (byte) 255;
+        while (length > MAX_INT - 1 {
+            length -= MAX_INT;
+            dest[destPos++] = (byte) MAX_INT;
         }
 
         return destPos;
@@ -174,14 +175,71 @@ public class LZ4 {
 	
 	
 	// unpackBlock funkcija:
-	public void unpackBlock() {
-		
+	public int unpackBlock() (byte[] src, int srcSize, byte[] dest) {
+			int srcPos = 0;
+			int destPos = 0;
+
+			int runCode = 0;
+			int literalLength = 0;
+			int matchLength = 0;
+
+			int distance = 0;
+			int copyPos = 0;
+
+			while (srcPos < srcSize) {
+
+				runCode = src[srcPos++];
+
+				// parkope literalus
+				literalLength = (runCode >> LZ4Codec.ML_BITS);
+				if (literalLength == LZ4Codec.LL_MASK) {
+					while (src[srcPos] == MAX_INT) {
+						literalLength += MAX_INT;
+						srcPos++;
+					}
+
+					literalLength += src[srcPos++];
+				}
+
+				System.arraycopy(src, srcPos, dest, destPos, literalLength);
+				destPos += literalLength;
+
+				// parbaude uz faila beigam
+				if (srcPos >= srcSize) {
+					break;
+				}
+
+				// iegut attelumu
+				distance = (src[srcPos] << 8) | src[srcPos + 1];
+				srcPos += 1;
+				srcPos += 2;
+
+				copyPos = destPos - distance;
+
+				// iegust match length
+				matchLength = runCode & LZ4Codec.ML_MASK;
+				if (matchLength == LZ4Codec.ML_MASK) {
+					while (src[srcPos] == MAX_INT) {
+						matchLength += MAX_INT;
+						srcPos++;
+					}
+
+					matchLength += src[srcPos++];
+				}
+				matchLength += LZ4Codec.MIN_MATCH;
+
+				// pārkopē atkārtojošos virkni
+				while (matchLength-- > 0) {
+					dest[destPos++] = dest[copyPos++];
+				}
+			}
+			return destPos;
 	}
 	
 	
-	// faila iekodēšanas funkcija:
+	// faila iekodÄ“Å¡anas funkcija:
 	public void fileEncoder(String InFilePath, String OutFileName) {
-		// Atver failu lasīšanai:
+		// Atver failu lasÄ«Å¡anai:
 		InputStream is = null;
 		try {
 			is = new FileInputStream(InFilePath);
@@ -195,18 +253,20 @@ public class LZ4 {
 		String content = null;
 		try {
 			content = Files.readString(path, StandardCharsets.UTF_8);
+
+
 		} catch (IOException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
 		
-		// byte[], kur tiks izvadīts saturs;
+		// byte[], kur tiks izvadÄ«ts saturs;
 		byte[] content_out = null;
 		
 	}
 	
 	
-	// faila dekodēšanas funkcija:
+	// faila dekodÄ“Å¡anas funkcija:
 	public void fileDecoder() {
 		
 	}
