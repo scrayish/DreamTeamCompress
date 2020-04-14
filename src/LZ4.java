@@ -95,8 +95,12 @@ public class LZ4 {
 			runCodePos = destPos;
 			destPos++;
 			
+			
 			if (literalLength > (LL_MASK - 1)) {
 				dest[runCodePos] = (byte) (LL_MASK << ML_BITS);
+				extraLiteral = literalLength - (LZ4Codec.RUN_MASK - 1);
+				dest[runCodePos++] = extraLiteral;
+				destPos++;
 				destPos = encodeLength(dest, destPos, literalLength - LL_MASK);
 			} else {
 				dest[runCodePos] = (byte) (literalLength << ML_BITS);
