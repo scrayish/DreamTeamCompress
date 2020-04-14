@@ -16,7 +16,7 @@ public class LZ4 {
 		byte[] outData;
 	}
 	
-	// GlobÄ�lie mainÄ«gie.
+	// Globālie mainīgie
 	static final int MAX_INT = 255;
 	static final int MIN_MATCH = 4;
 	static final int MAX_DISTANCE_LOG = 16;
@@ -45,6 +45,7 @@ public class LZ4 {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
+		
 		int srcPos = 0;
 		int srcSize = srcBytes.length;
 		int srcLimit = srcSize - MIN_MATCH;
@@ -60,6 +61,7 @@ public class LZ4 {
 		int literalLength = 0;
 		int matchLength = 0;
 		
+		// Iterē pāri visiem datiem, lai tos pakotu un kodētu.
 		while (srcPos < srcLimit) {
 			seq = (srcBytes[srcPos] << 24) | (srcBytes[srcPos + 1] << 16)
 					| (srcBytes[srcPos + 2] << 8) | srcBytes[srcPos + 3];
@@ -96,19 +98,19 @@ public class LZ4 {
 			literalLength = srcPos - anchor;
 			runCodePos = destPos;
 			destPos++;
-			
+			int extraLiteral = 0;
 			
 			if (literalLength > (LL_MASK - 1)) {
 				dest[runCodePos] = (byte) (LL_MASK << ML_BITS);
-				extraLiteral = literalLength - (LZ4Codec.RUN_MASK - 1);
-				dest[runCodePos++] = extraLiteral;
+				extraLiteral = literalLength - (LL_MASK - 1);
+				runCodePos++;
+				dest[runCodePos] = (byte) extraLiteral;
 				destPos++;
 				destPos = encodeLength(dest, destPos, literalLength - LL_MASK);
 			} else {
 				dest[runCodePos] = (byte) (literalLength << ML_BITS);
 			}
 			
-			// KopÄ“ Literals
 			System.arraycopy(srcBytes, anchor, dest, destPos, literalLength);
 			destPos += literalLength;
 			
@@ -119,7 +121,7 @@ public class LZ4 {
 			dest[destPos++] = (byte) (distance & 0xFF);
 			dest[destPos++] = (byte) ((distance >> 8) & 0xFF);
 			
-			// KKÄ�ds meme
+			// Skaita vienādos simbolus, ko matchot.
 			srcPos += MIN_MATCH;
 			refPos += MIN_MATCH;
 			anchor = srcPos;
@@ -129,10 +131,15 @@ public class LZ4 {
 			}
 			
 			matchLength = srcPos - anchor;
+			int extraMatch = 0;
 			
-			// IekodÄ“ match length
+			// Iekodē match length
 			if (matchLength > (ML_MASK - 1)) {
 				dest[runCodePos] |= (byte) ML_MASK;
+				extraMatch = matchLength - (ML_MASK - 1);
+				runCodePos++;
+				dest[runCodePos] = (byte) extraMatch;
+				destPos++;
 				destPos = encodeLength(dest, destPos, matchLength - ML_MASK);
 			} else {
 				dest[runCodePos] |= (byte) matchLength;
@@ -155,7 +162,7 @@ public class LZ4 {
 		return destPos;
 	}
 	
-	// InicializÄ“ posHashTable
+	// Inicializē posHashTable
 	public void initializeCompression() {
 		if (posHashTable == null) {
 			posHashTable = new int[HASH_TABLE_SIZE];
@@ -169,7 +176,7 @@ public class LZ4 {
             throw new IllegalArgumentException();
         }
 
-        while (length > MAX_INT - 1 {
+        while (length > MAX_INT - 1) {
             length -= MAX_INT;
             dest[destPos++] = (byte) MAX_INT;
         }
@@ -179,7 +186,7 @@ public class LZ4 {
 	
 	
 	// unpackBlock funkcija:
-	public int unpackBlock() (byte[] src, int srcSize, byte[] dest) {
+	public int unpackBlock(byte[] src, int srcSize, byte[] dest) {
 			int srcPos = 0;
 			int destPos = 0;
 
@@ -195,8 +202,8 @@ public class LZ4 {
 				runCode = src[srcPos++];
 
 				// parkope literalus
-				literalLength = (runCode >> LZ4Codec.ML_BITS);
-				if (literalLength == LZ4Codec.LL_MASK) {
+				literalLength = (runCode >> ML_BITS);
+				if (literalLength == LL_MASK) {
 					while (src[srcPos] == MAX_INT) {
 						literalLength += MAX_INT;
 						srcPos++;
@@ -221,8 +228,8 @@ public class LZ4 {
 				copyPos = destPos - distance;
 
 				// iegust match length
-				matchLength = runCode & LZ4Codec.ML_MASK;
-				if (matchLength == LZ4Codec.ML_MASK) {
+				matchLength = runCode & ML_MASK;
+				if (matchLength == ML_MASK) {
 					while (src[srcPos] == MAX_INT) {
 						matchLength += MAX_INT;
 						srcPos++;
@@ -230,7 +237,7 @@ public class LZ4 {
 
 					matchLength += src[srcPos++];
 				}
-				matchLength += LZ4Codec.MIN_MATCH;
+				matchLength += MIN_MATCH;
 
 				// pārkopē atkārtojošos virkni
 				while (matchLength-- > 0) {
@@ -241,9 +248,9 @@ public class LZ4 {
 	}
 	
 	
-	// faila iekodÄ“Å¡anas funkcija:
+	// faila kodēšanas funkcija:
 	public void fileEncoder(String InFilePath, String OutFileName) {
-		// Atver failu lasÄ«Å¡anai:
+		// Atver failu lasīšanai:
 		InputStream is = null;
 		try {
 			is = new FileInputStream(InFilePath);
@@ -270,7 +277,7 @@ public class LZ4 {
 	}
 	
 	
-	// faila dekodÄ“Å¡anas funkcija:
+	// faila dekodēšanas funkcija:
 	public void fileDecoder() {
 		
 	}
