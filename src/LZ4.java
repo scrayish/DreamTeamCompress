@@ -1,5 +1,7 @@
 
 import java.io.*;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -17,165 +19,300 @@ public class LZ4 {
 	}
 	
 	// GlobÄ�lie mainÄ«gie.
+	
+	static final int MFLIMIT = 12; // LZ4 blokformāta ierobežojumi
+	static final int LASTLITERALS = 5;
+	static final long MAX_INPUT_SIZE = 0x7E000000;
+	static final int minLength = (MFLIMIT+1);
+	static final int skipTrigger = 6; // lielākas vērtības palēnina nesaspiežamu datu apstrādi
+	
 	static final int MAX_INT = 255;
 	static final int MIN_MATCH = 4;
 	static final int MAX_DISTANCE_LOG = 16;
-	static final int MAX_DISTANCE = 1 << MAX_DISTANCE_LOG;
+	static final int MAX_DISTANCE = (1 << MAX_DISTANCE_LOG) - 1;
 	static final int ML_BITS = 4;
 	static final int ML_MASK = (1 << ML_BITS) - 1;
 	static final int LL_BITS = 8 - ML_BITS;
 	static final int LL_MASK = (1 << LL_BITS) - 1;
 	
 	static final int INCOMPRESSIBLE = 128;
-	static final int HASH_LOG = 17;
-	static final int HASH_TABLE_SIZE = 1 << HASH_LOG;
-	static final int HASH_RIGHT_SHIFT_COUNT = MIN_MATCH * 8 - HASH_LOG;
+	static final int LZ4_MEMORY_USAGE = 14; // N->2^N, 14 = 16KB kešatmiņai
+	static final int HASH_LOG = LZ4_MEMORY_USAGE-2;
+	static final long HASH_TABLE_SIZE = 1 << LZ4_MEMORY_USAGE;
+	static final int HASH_RIGHT_SHIFT_COUNT = (MIN_MATCH * 8) - (HASH_LOG+1);
 	
-	private int[] posHashTable;
+	private static long[] posHashTable;
 	
 	// packBlock funkcija:
-	public int packBlock(String src, byte[] dest) {
+	public static int packBlock(byte[] src, byte[] dest) {
 		initializeCompression();
 		
+		int result = 0;
 		// Hyper-parameters
 		byte[] srcBytes = null;
-		try {
-			srcBytes = src.getBytes("UTF-8");
-		} catch (UnsupportedEncodingException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-		int srcPos = 0;
-		int srcSize = srcBytes.length;
-		int srcLimit = srcSize - MIN_MATCH;
-		int destPos = 0;
-		int seq = 0; // Pretty much slÄ«doÅ¡ais logs.
-		int hashVal = 0;
-		int refPos = 0;
-		int distance = 0;
-		int step = 1;
-		int limit = INCOMPRESSIBLE;
-		int anchor = 0;
-		int runCodePos = 0;
-		int literalLength = 0;
-		int matchLength = 0;
+		srcBytes = Arrays.copyOf(src, src.length);
+		long ip = 0; // tekošis elements satura masīvā
+		long startIndex = 0;
+		long base = 0;
+		long lowLimit = 0;
+		long anchor = 0;
+		boolean isLastLiteral = false;
+		boolean isNextMatch = false;
+		long iend = ip + src.length;
+		long mflimitPlusOne = iend - MFLIMIT +1;
+		long matchlimit = iend - LASTLITERALS;
 		
-		while (srcPos < srcLimit) {
-			seq = (srcBytes[srcPos] << 24) | (srcBytes[srcPos + 1] << 16)
-					| (srcBytes[srcPos + 2] << 8) | srcBytes[srcPos + 3];
-			hashVal = ((int) (seq * 2654435761L) >>> HASH_RIGHT_SHIFT_COUNT);
-			
-			refPos = posHashTable[hashVal];
-			posHashTable[hashVal] = srcPos;
-			
-			distance = srcPos - refPos;
-			
-			
-			if (distance >= MAX_DISTANCE
-					|| seq != ((srcBytes[srcPos] << 24) | (srcBytes[srcPos + 1] << 16)
-					| (srcBytes[srcPos + 2] << 8) | srcBytes[srcPos + 3])) {
-				if (srcPos - anchor > limit) {
-					limit <<= 1;
-					step += 1 + (step >> 2);
+		long op = 0; // tekošais elements saspiestajā masīvā
+		long olimit = op + (MAX_DISTANCE + MAX_DISTANCE/255 + 16);
+		
+		long offset = 0;
+		int forwardH;
+		
+		if (olimit<1) {return 0;}
+		if (src.length>MAX_INPUT_SIZE) {return 0;}
+		if (src.length<minLength) {isLastLiteral = true;/* te jāiet uz pedejo literal*/}
+		if (!isLastLiteral) {
+			putHashOnPos(ip, srcBytes, base);
+			ip++;
+			forwardH = hashPosition((int) ip, srcBytes);
+			last_literal:
+			for (;;) {
+				
+				long match;
+				long token;
+				long filledIp;
+				
+				// atrod vienādos
+				long forwardIp = ip;
+				int step = 1;
+				int searchMatchNb = 1 << skipTrigger;
+				do {
+					long h = forwardH;
+					long current = forwardIp-base;
+					long matchIndex = posHashTable[(int) h];
+					ip = forwardIp;
+					forwardIp += step;
+					step = searchMatchNb++ >> skipTrigger;
+					if (forwardIp > mflimitPlusOne) {
+						break last_literal;/*ejam uz pedejo literal*/
+					}
+					
+					match = base + matchIndex;
+					forwardH = hashPosition((int) forwardIp, srcBytes);
+					posHashTable[(int) h] = current;
+					if (matchIndex+MAX_DISTANCE < current) {
+						continue; // esam par tālu 
+					}
+					long lmatch = lz4Read32((int)match, srcBytes);
+					long lip = lz4Read32((int)ip, srcBytes);
+					if (lmatch == lip) {
+						break;
+					}
+				}while(true);
+				
+				filledIp = ip;
+				while(((ip>anchor) && (match > lowLimit)) && (srcBytes[(int) match-1] == srcBytes[(int) ip])) {
+					ip--;
+					match--;
 				}
 				
-				srcPos += step;
-				continue;
+				long litlength = ip-anchor;
+				token = op++;
+				if (op + litlength + (2 + 1 + LASTLITERALS) + (litlength/255)>olimit) {
+					return 0; // cannot compress within budget
+				}
+				
+				if (litlength >= LL_MASK) {
+					int len = (int) (litlength - LL_MASK);
+					dest[(int) token] = (byte) (LL_MASK<<ML_BITS);
+					for (; len >= 255; len -=255) {
+						dest[(int) op++] = (byte) 255;
+					}
+					dest[(int) op++] = (byte) len; // pieskaitam atlikumu
+				}else {
+					dest[(int)token] = (byte) (litlength<<ML_BITS);
+				}
+				System.arraycopy(srcBytes,(int) anchor, dest,(int) op, (int) (litlength));
+				op+=litlength;
+				
+				next_match:
+				{
+					dest[(int)op++] = (byte)(ip-match);
+					dest[(int)op++] = (byte)((ip-match)<<8); // ierakstam offset
+					
+					long matchCode;
+					matchCode = LZ4_count(ip+MIN_MATCH, match+MIN_MATCH, matchlimit, srcBytes);
+					ip += matchCode + MIN_MATCH;		
+					
+					if ((op + (1+LASTLITERALS) + (matchCode+240)/255)> olimit) {
+						return 0;
+					}
+					
+					if (matchCode >= ML_MASK) {
+						dest[(int) token] += ML_MASK;
+						matchCode -= ML_MASK;
+						dest[(int) op++] = (byte) 0xFF;
+						dest[(int) op++] = (byte) 0xFF;
+						dest[(int) op++] = (byte) 0xFF;
+						dest[(int) op++] = (byte) 0xFF;
+						while (matchCode >= 4*255) {
+							op +=4;
+							dest[(int) op] = (byte) 0xFF;
+							dest[(int) op+1] = (byte) 0xFF;
+							dest[(int) op+2] = (byte) 0xFF;
+							dest[(int) op+3] = (byte) 0xFF;
+							matchCode -= 4*255;
+						}
+						op += matchCode/255;
+						dest[(int)op++] = (byte)(matchCode % 255);
+					}else {
+						dest[(int)token] += (byte)(matchCode);
+					}
+					anchor = ip;
+					if (ip >= mflimitPlusOne) break;
+					putHashOnPos(ip-2, srcBytes, base);
+					int h = hashPosition((int) ip, srcBytes);
+					int current = (int) ((int) ip-base);
+					long matchIndex = posHashTable[(int) h];
+					match = base + matchIndex;
+					posHashTable[(int) h] = current;
+					long lmatch = lz4Read32((int)match, srcBytes);
+					long lip = lz4Read32((int)ip, srcBytes);
+					if ((lmatch == lip) && (matchIndex + MAX_DISTANCE >= current)) {
+						token = op++;
+						dest[(int)token] = 0;
+						break next_match;
+					}
+				}
+				forwardH = hashPosition((int) ++ip, srcBytes);
+				
+				
 			}
-			
-			
-			if (step > 1) {
-				posHashTable[hashVal] = refPos;
-				srcPos -= (step - 1);
-				step = 1;
-				continue;
-			}
-			
-			
-			limit = INCOMPRESSIBLE;
-			literalLength = srcPos - anchor;
-			runCodePos = destPos;
-			destPos++;
-			
-			if (literalLength > (LL_MASK - 1)) {
-				dest[runCodePos] = (byte) (LL_MASK << ML_BITS);
-				destPos = encodeLength(dest, destPos, literalLength - LL_MASK);
-			} else {
-				dest[runCodePos] = (byte) (literalLength << ML_BITS);
-			}
-			
-			// KopÄ“ Literals
-			System.arraycopy(srcBytes, anchor, dest, destPos, literalLength);
-			destPos += literalLength;
-			
-			// Little endian offset:
-			if (distance < 0) {
-				throw new RuntimeException();
-			}
-			dest[destPos++] = (byte) (distance & 0xFF);
-			dest[destPos++] = (byte) ((distance >> 8) & 0xFF);
-			
-			// KKÄ�ds meme
-			srcPos += MIN_MATCH;
-			refPos += MIN_MATCH;
-			anchor = srcPos;
-			while (srcPos < srcSize && srcBytes[srcPos] == srcBytes[refPos]) {
-				srcPos++;
-				refPos++;
-			}
-			
-			matchLength = srcPos - anchor;
-			
-			// IekodÄ“ match length
-			if (matchLength > (ML_MASK - 1)) {
-				dest[runCodePos] |= (byte) ML_MASK;
-				destPos = encodeLength(dest, destPos, matchLength - ML_MASK);
-			} else {
-				dest[runCodePos] |= (byte) matchLength;
-			}
-			
-			anchor = srcPos;
+		}
+		// last literals
+		int lastRun = (int)(iend - anchor);
+		if(op + lastRun + 1 + ((lastRun+255-LL_MASK)/255)>olimit) {
+			return 0;
 		}
 		
-		literalLength = srcSize - anchor;
-		if (literalLength > (LL_MASK - 1)) {
-			dest[destPos++] = (byte) (LL_MASK << ML_BITS);
-			destPos = encodeLength(dest, destPos, literalLength - LL_MASK);
-		} else {
-			dest[destPos++] = (byte) (literalLength << ML_BITS);
+		if (lastRun >= LL_MASK) {
+			int accumulator = lastRun - LL_MASK;
+			dest[(int) op++] = (byte) (LL_MASK<<ML_BITS) ;
+			for(;accumulator >= 255; accumulator -=255) {
+				dest[(int) op++] = (byte) 255;
+			}
+			dest[(int) op++] = (byte) accumulator;
+		}else {
+			dest[(int) op++] = (byte) (lastRun<<ML_BITS);
+		}
+		System.arraycopy(srcBytes,(int) anchor, dest,(int) op, (int) (lastRun));
+		ip = anchor + lastRun;
+		op += lastRun;
+		
+		result = (int) op;
+		
+		
+		
+		
+		
+		return result;
+	}
+	
+	public static void lastLiteral() {
+		
+	}
+	
+	
+	public static long LZ4_count(long pIn, long pMatch, long pLimit, byte[] src) {
+		long pStart = pIn;
+		if (pIn < pLimit-(32-1)) {
+			long diff =  (lz4Read32((int)pMatch, src) ^ lz4Read32((int)pIn, src));
+			if (diff <1) {
+				pIn+=32; pMatch +=32;
+			}else {
+				long r = 0;
+				for (int i = 0; i<32; i++) {
+					if ((((byte) diff) & 1) == 1) {
+						r = i;
+						break;
+					}else {
+						diff = diff >>>1;
+					}
+				}
+	            return (r>>3);
+
+			}
 		}
 		
-		System.arraycopy(srcBytes, anchor, dest, destPos, literalLength);
-		destPos += literalLength;
+		while (pIn < pLimit-(32-1)) {
+			long diff =  (lz4Read32((int)pMatch, src) ^ lz4Read32((int)pIn, src));
+			if (diff<1) {pIn+=32; pMatch +=32; continue;}
+			long r = 0;
+			for (int i = 0; i<32; i++) {
+				if ((((byte) diff) & 1) == 1) {
+					r = i;
+					break;
+				}else {
+					diff = diff >>>1;
+				}
+			}
+            pIn += r;
+            return (pIn - pStart);
+			
+		}
 		
-		return destPos;
+		if( (pIn<(pLimit-1)) && (lz4Read16((int)pMatch, src) == lz4Read16((int)pIn, src))){
+			pIn +=2;
+			pMatch +=2;
+		}
+		if ((pIn<pLimit && src[(int)pMatch] == src[(int)pIn])) {pIn++;}
+		return (pIn - pStart);
+		
+	}
+	
+	public static long lz4Read32(int p, byte[] src) {
+		ByteBuffer temp = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN);
+		System.arraycopy(src, p, temp.array(), 0, 4);
+		long seq =  (temp.getInt());
+		seq = seq & 0x00000000FFFFFFFFl;
+		return seq;
+	}
+	
+	public static int lz4Read16(int p, byte[] src) {
+		ByteBuffer temp = ByteBuffer.allocate(2).order(ByteOrder.LITTLE_ENDIAN);
+		System.arraycopy(src, p, temp.array(), 0, 2);
+		int seq = (int) (temp.getShort());
+		seq = seq & 0x0000FFFF;
+		return seq;
+	}
+	
+	public static int hashPosition(int p, byte[] src) {
+		long seq = lz4Read32(p, src);
+		seq *= 2654435761L;
+		seq = seq & 0x00000000ffffffffl;
+		seq = (seq ) >> (HASH_RIGHT_SHIFT_COUNT);
+		
+		int h = (int) seq;
+		return h;
+	}
+	
+	public static void putHashOnPos(long p, byte[] src, long base) {
+		int h = hashPosition((int)p, src);
+		posHashTable[h] = (p-base);
 	}
 	
 	// InicializÄ“ posHashTable
-	public void initializeCompression() {
+	public static void initializeCompression() {
 		if (posHashTable == null) {
-			posHashTable = new int[HASH_TABLE_SIZE];
+			posHashTable = new long[(int) HASH_TABLE_SIZE];
 		}
 		
-		Arrays.fill(posHashTable, - MAX_DISTANCE);
+		Arrays.fill(posHashTable, 0);
 	}
-	
-	private static final int encodeLength(byte[] dest, int destPos, int length) {
-        if (length  < 0) {
-            throw new IllegalArgumentException();
-        }
-
-        while (length > MAX_INT - 1 {
-            length -= MAX_INT;
-            dest[destPos++] = (byte) MAX_INT;
-        }
-
-        return destPos;
-    }
-	
+		
 	
 	// unpackBlock funkcija:
-	public int unpackBlock() (byte[] src, int srcSize, byte[] dest) {
+	public int unpackBlock(byte[] src, int srcSize, byte[] dest) {
 			int srcPos = 0;
 			int destPos = 0;
 
@@ -191,8 +328,8 @@ public class LZ4 {
 				runCode = src[srcPos++];
 
 				// parkope literalus
-				literalLength = (runCode >> LZ4Codec.ML_BITS);
-				if (literalLength == LZ4Codec.LL_MASK) {
+				literalLength = (runCode >> ML_BITS);
+				if (literalLength == LL_MASK) {
 					while (src[srcPos] == MAX_INT) {
 						literalLength += MAX_INT;
 						srcPos++;
@@ -217,8 +354,8 @@ public class LZ4 {
 				copyPos = destPos - distance;
 
 				// iegust match length
-				matchLength = runCode & LZ4Codec.ML_MASK;
-				if (matchLength == LZ4Codec.ML_MASK) {
+				matchLength = runCode & ML_MASK;
+				if (matchLength == ML_MASK) {
 					while (src[srcPos] == MAX_INT) {
 						matchLength += MAX_INT;
 						srcPos++;
@@ -226,7 +363,7 @@ public class LZ4 {
 
 					matchLength += src[srcPos++];
 				}
-				matchLength += LZ4Codec.MIN_MATCH;
+				matchLength += MIN_MATCH;
 
 				// pārkopē atkārtojošos virkni
 				while (matchLength-- > 0) {
@@ -238,30 +375,26 @@ public class LZ4 {
 	
 	
 	// faila iekodÄ“Å¡anas funkcija:
-	public void fileEncoder(String InFilePath, String OutFileName) {
+	public void fileEncoder(String InFilePath, String OutFileName) throws IOException {
 		// Atver failu lasÄ«Å¡anai:
 		InputStream is = null;
+		OutputStream os = null;
 		try {
 			is = new FileInputStream(InFilePath);
+			int delimPos = (InFilePath.lastIndexOf("\\") > -1) ? InFilePath.lastIndexOf("\\") : InFilePath.lastIndexOf("//");
+			String path = InFilePath.substring(0,delimPos+1);
+			os = new FileOutputStream(path+OutFileName);
 		} catch (FileNotFoundException e) {
 			e.printStackTrace();
 		}
-		Reader r = new InputStreamReader(is, Charset.forName("UTF-8"));
+		byte[] content_out = new byte[MAX_DISTANCE + (MAX_DISTANCE/255) + 16];
+		int readByte;
+		while ((readByte = is.read()) != -1) {
+		      os.write(readByte);
+		    }
+		os.flush();
 		
-		// Lasa info no faila:
-		Path path = Paths.get(InFilePath);
-		String content = null;
-		try {
-			content = Files.readString(path, StandardCharsets.UTF_8);
-
-
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
 		
-		// byte[], kur tiks izvadÄ«ts saturs;
-		byte[] content_out = null;
 		
 	}
 	
@@ -271,9 +404,21 @@ public class LZ4 {
 		
 	}
 	
-	public static void main(String[] args) {
+	public static void main(String[] args) throws IOException {
+			
+		byte[] data2 = "Drumstalām miltus sajauc ar cukuriem, kanēli, sāli, tad pievieno mīkstu sviestu un visu labi samīci, ieliec ledusskapī uz vismaz 30 minūtēm, tad veido drumstalas, plucinot mīklu pa maziem gabaliņiem un ber uz izceptās ābolkūkas. Pēc tam kūku cep vēl 15–20 minūtes.".getBytes("UTF-8");
+		
+		
+		
+		// byte[], kur tiks izvadÄ«ts saturs;
+		byte[] content_out = new byte[MAX_DISTANCE + (MAX_DISTANCE/255) + 16];
+		ByteBuffer test = ByteBuffer.allocate(data2.length).order(ByteOrder.LITTLE_ENDIAN);
+		test.put(data2);
+		int compressedLength = packBlock(test.array(), content_out);
+		FileOutputStream fos = new FileOutputStream(new File("test.lz4"));
+		fos.write(content_out, 0, compressedLength);
+		fos.close();
 		
 	}
 	
 }
-
