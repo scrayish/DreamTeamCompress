@@ -17,7 +17,7 @@ public class LZ4 {
 		byte[] src;
 		byte[] outData;
 	}
-	
+		
 	// GlobÄ�lie mainÄ«gie.
 	
 	static final int MFLIMIT = 12; // LZ4 blokformāta ierobežojumi
@@ -25,7 +25,18 @@ public class LZ4 {
 	static final long MAX_INPUT_SIZE = 0x7E000000;
 	static final int minLength = (MFLIMIT+1);
 	static final int skipTrigger = 6; // lielākas vērtības palēnina nesaspiežamu datu apstrādi
-	
+	  static final int MAGIC = 0x184D2204;
+	  static final int LZ4_MAX_HEADER_LENGTH =
+	      4 + // magic
+	      1 + // FLG
+	      1 + // BD
+	      8 + // Content Size
+	      1; // HC
+	static	long PRIME32_1 = 2654435761l;
+	static	long PRIME32_2 = 2246822519l;
+	static	long PRIME32_3 = 3266489917l;
+	static	long PRIME32_4 =  668265263l;
+	static	long PRIME32_5 =  374761393l;
 	static final int MAX_INT = 255;
 	static final int MIN_MATCH = 4;
 	static final int MAX_DISTANCE_LOG = 16;
@@ -35,7 +46,7 @@ public class LZ4 {
 	static final int LL_BITS = 8 - ML_BITS;
 	static final int LL_MASK = (1 << LL_BITS) - 1;
 	
-	static final int INCOMPRESSIBLE = 128;
+	static final int INCOMPRESSIBLE = 0x80000000;
 	static final int LZ4_MEMORY_USAGE = 14; // N->2^N, 14 = 16KB kešatmiņai
 	static final int HASH_LOG = LZ4_MEMORY_USAGE-2;
 	static final long HASH_TABLE_SIZE = 1 << LZ4_MEMORY_USAGE;
@@ -44,13 +55,13 @@ public class LZ4 {
 	private static long[] posHashTable;
 	
 	// packBlock funkcija:
-	public static int packBlock(byte[] src, byte[] dest) {
+	public static int packBlock(byte[] src, int SrcLen, byte[] dest) {
 		initializeCompression();
 		
 		int result = 0;
 		// Hyper-parameters
 		byte[] srcBytes = null;
-		srcBytes = Arrays.copyOf(src, src.length);
+		srcBytes = Arrays.copyOf(src, SrcLen);
 		long ip = 0; // tekošis elements satura masīvā
 		long startIndex = 0;
 		long base = 0;
@@ -58,7 +69,7 @@ public class LZ4 {
 		long anchor = 0;
 		boolean isLastLiteral = false;
 		boolean isNextMatch = false;
-		long iend = ip + src.length;
+		long iend = ip + SrcLen;
 		long mflimitPlusOne = iend - MFLIMIT +1;
 		long matchlimit = iend - LASTLITERALS;
 		
@@ -69,8 +80,8 @@ public class LZ4 {
 		int forwardH;
 		
 		if (olimit<1) {return 0;}
-		if (src.length>MAX_INPUT_SIZE) {return 0;}
-		if (src.length<minLength) {isLastLiteral = true;/* te jāiet uz pedejo literal*/}
+		if (SrcLen>MAX_INPUT_SIZE) {return 0;}
+		if (SrcLen<minLength) {isLastLiteral = true;/* te jāiet uz pedejo literal*/}
 		if (!isLastLiteral) {
 			putHashOnPos(ip, srcBytes, base);
 			ip++;
@@ -111,7 +122,7 @@ public class LZ4 {
 				}while(true);
 				
 				filledIp = ip;
-				while(((ip>anchor) && (match > lowLimit)) && (srcBytes[(int) match-1] == srcBytes[(int) ip])) {
+				while(((ip>anchor) && (match > lowLimit)) && (srcBytes[(int) match-1] == srcBytes[(int) ip-1])) {
 					ip--;
 					match--;
 				}
@@ -136,9 +147,11 @@ public class LZ4 {
 				op+=litlength;
 				
 				next_match:
-				{
-					dest[(int)op++] = (byte)(ip-match);
-					dest[(int)op++] = (byte)((ip-match)<<8); // ierakstam offset
+				for(;;){
+					dest[(int)op] = (byte)(ip-match);
+					op++;
+					dest[(int)op] = (byte)((ip-match)<<8); // ierakstam offset
+					op++;
 					
 					long matchCode;
 					matchCode = LZ4_count(ip+MIN_MATCH, match+MIN_MATCH, matchlimit, srcBytes);
@@ -151,10 +164,10 @@ public class LZ4 {
 					if (matchCode >= ML_MASK) {
 						dest[(int) token] += ML_MASK;
 						matchCode -= ML_MASK;
-						dest[(int) op++] = (byte) 0xFF;
-						dest[(int) op++] = (byte) 0xFF;
-						dest[(int) op++] = (byte) 0xFF;
-						dest[(int) op++] = (byte) 0xFF;
+						dest[(int) op] = (byte) 0xFF;
+						dest[(int) op+1] = (byte) 0xFF;
+						dest[(int) op+2] = (byte) 0xFF;
+						dest[(int) op+3] = (byte) 0xFF;
 						while (matchCode >= 4*255) {
 							op +=4;
 							dest[(int) op] = (byte) 0xFF;
@@ -181,8 +194,9 @@ public class LZ4 {
 					if ((lmatch == lip) && (matchIndex + MAX_DISTANCE >= current)) {
 						token = op++;
 						dest[(int)token] = 0;
-						break next_match;
+						continue next_match;
 					}
+					break;
 				}
 				forwardH = hashPosition((int) ++ip, srcBytes);
 				
@@ -211,24 +225,15 @@ public class LZ4 {
 		
 		result = (int) op;
 		
-		
-		
-		
-		
 		return result;
 	}
-	
-	public static void lastLiteral() {
 		
-	}
-	
-	
 	public static long LZ4_count(long pIn, long pMatch, long pLimit, byte[] src) {
 		long pStart = pIn;
-		if (pIn < pLimit-(32-1)) {
+		if (pIn < pLimit-(4-1)) {
 			long diff =  (lz4Read32((int)pMatch, src) ^ lz4Read32((int)pIn, src));
 			if (diff <1) {
-				pIn+=32; pMatch +=32;
+				pIn+=4; pMatch +=4;
 			}else {
 				long r = 0;
 				for (int i = 0; i<32; i++) {
@@ -240,13 +245,12 @@ public class LZ4 {
 					}
 				}
 	            return (r>>3);
-
 			}
 		}
 		
-		while (pIn < pLimit-(32-1)) {
+		while (pIn < pLimit-(4-1)) {
 			long diff =  (lz4Read32((int)pMatch, src) ^ lz4Read32((int)pIn, src));
-			if (diff<1) {pIn+=32; pMatch +=32; continue;}
+			if (diff<1) {pIn+=4; pMatch +=4; continue;}
 			long r = 0;
 			for (int i = 0; i<32; i++) {
 				if ((((byte) diff) & 1) == 1) {
@@ -256,9 +260,8 @@ public class LZ4 {
 					diff = diff >>>1;
 				}
 			}
-            pIn += r;
+            pIn += (r>>3);
             return (pIn - pStart);
-			
 		}
 		
 		if( (pIn<(pLimit-1)) && (lz4Read16((int)pMatch, src) == lz4Read16((int)pIn, src))){
@@ -267,7 +270,6 @@ public class LZ4 {
 		}
 		if ((pIn<pLimit && src[(int)pMatch] == src[(int)pIn])) {pIn++;}
 		return (pIn - pStart);
-		
 	}
 	
 	public static long lz4Read32(int p, byte[] src) {
@@ -373,9 +375,127 @@ public class LZ4 {
 			return destPos;
 	}
 	
+	public static long xxhrot132(long x, int r){
+		long a = x<<r;
+		long b = x>>(32-r);
+		long c = a | b;
+		return c;
+	}
+	
+	public static long xx32Round(long rng, long input) {
+		long seed = rng;
+		seed += input * PRIME32_2;
+		seed = seed & 0x00000000FFFFFFFFl;
+		seed = xxhrot132(seed, 13);
+		seed *= PRIME32_1;
+		seed = seed & 0x00000000FFFFFFFFl;
+		return seed;
+	}
+	
+	public static long xx32_avalanche(long hash) {
+		long h32 = hash;
+		h32 ^= h32 >> 15;
+		h32 *= PRIME32_2;
+		h32 = h32 & 0x00000000FFFFFFFFl;
+		h32 ^= h32 >> 13;
+		h32 *= PRIME32_3;
+		h32 = h32 & 0x00000000FFFFFFFFl;
+		h32 ^= h32 >> 16;
+		return h32;
+	}
+	
+	public static long PROCONE(long hash, int ip, byte[] buf) {
+		long h32 = hash;
+		h32 += buf[ip] * PRIME32_5;
+		h32 = h32 & 0x00000000FFFFFFFFl;
+		//ip++;
+		h32 = xxhrot132(h32, 11) * PRIME32_1;
+		h32 = h32 & 0x00000000FFFFFFFFl;
+		return h32;
+	}
+	
+	public static long PROCFOUR(long hash, int ip, byte[] buf) {
+		long h32 = hash;
+		h32 += lz4Read32(ip, buf) * PRIME32_3;
+		h32 = h32 & 0x00000000FFFFFFFFl;
+		//ip +=4;
+		h32 = xxhrot132(h32, 17) * PRIME32_4;
+		h32 = h32 & 0x00000000FFFFFFFFl;
+		return h32;
+	}
+	
+	public static long xxhFinalize(long hash, int ip, int len, byte[] buf) {
+		
+		int p = ip;
+		long h32 = hash;
+		switch(len&15) {
+			case 12:	h32 = PROCFOUR(h32, p, buf);p +=4;
+			case 8: 	h32 = PROCFOUR(h32, p, buf);p +=4;
+			case 4:		h32 = PROCFOUR(h32, p, buf);p +=4;
+						return xx32_avalanche(h32);
+			
+			case 13:	h32 = PROCFOUR(h32, p, buf);p +=4;
+			case 9:		h32 = PROCFOUR(h32, p, buf);p +=4;
+			case 5:		h32 = PROCFOUR(h32, p, buf);p +=4;
+						h32 = PROCONE(h32, p, buf);	p++;	
+						return xx32_avalanche(h32);
+			
+			case 14:	h32 = PROCFOUR(h32, p, buf);p +=4;
+			case 10:	h32 = PROCFOUR(h32, p, buf);p +=4;
+			case 6:		h32 = PROCFOUR(h32, p, buf);p +=4;
+						h32 = PROCONE(h32, p, buf);p++;
+						h32 = PROCONE(h32, p, buf);	p++;
+						return xx32_avalanche(h32);
+						
+			case 15:	h32 = PROCFOUR(h32, p, buf);p +=4;
+			case 11:	h32 = PROCFOUR(h32, p, buf);p +=4;
+			case 7:		h32 = PROCFOUR(h32, p, buf);p +=4;
+			case 3:		h32 = PROCONE(h32, p, buf);p++;
+			case 2:		h32 = PROCONE(h32, p, buf);p++;
+			case 1:		h32 = PROCONE(h32, p, buf);p++;
+			case 0:		return xx32_avalanche(h32);
+		
+		}
+		return h32; //nevajadzētu būt iespējamam šeit nokļūt
+		
+	}
+	
+	public static long xx32Hash(byte[] header, int offset, int len, int seed) {
+
+		int ip = offset;
+		int iend = ip+len;
+		long hash;
+		if (len>=16) {
+			int limit = iend-15;
+			long v1 = seed + PRIME32_1 + PRIME32_2;
+			long v2 = seed + PRIME32_2;
+			long v3 = seed + 0;
+			long v4 = seed - PRIME32_1;
+			
+			do {
+				v1 = xx32Round(v1, lz4Read32(ip,header));
+				ip+=4;
+				v2 = xx32Round(v2, lz4Read32(ip,header));
+				ip+=4;
+				v3 = xx32Round(v3, lz4Read32(ip,header));
+				ip+=4;
+				v4 = xx32Round(v4, lz4Read32(ip,header));
+				ip+=4;
+			}while (ip<limit);
+			
+			hash = xxhrot132(v1, 1) + xxhrot132(v2, 7)
+				+ xxhrot132(v3, 12) + xxhrot132(v4, 18);
+		}else {
+			hash = seed + PRIME32_5;
+		}
+		
+		hash += len;		
+		
+		return xxhFinalize(hash, ip, len&15, header);
+	}
 	
 	// faila iekodÄ“Å¡anas funkcija:
-	public void fileEncoder(String InFilePath, String OutFileName) throws IOException {
+	public static void fileEncoder(String InFilePath, String OutFileName) throws IOException {
 		// Atver failu lasÄ«Å¡anai:
 		InputStream is = null;
 		OutputStream os = null;
@@ -387,38 +507,96 @@ public class LZ4 {
 		} catch (FileNotFoundException e) {
 			e.printStackTrace();
 		}
+		
+		
+		byte FLAG = 0b01100000; // versija =1, block independant, block checksum = false, content size = false, content checksum = false, reserved, dictID 
+		byte BLOCK = 0b01000000; // reserved, 100 = 4 = 64KB blocksize, reserved
+		ByteBuffer header = ByteBuffer.allocate(LZ4_MAX_HEADER_LENGTH).order(ByteOrder.LITTLE_ENDIAN);
+		header.putInt(MAGIC);
+		header.put(FLAG);
+		header.put(BLOCK);
+		long hash = (xx32Hash(header.array(), 4, header.position() - 4, 0) >> 8) & 0xFF; // izveido hash galvenei
+		header.put((byte)hash);
+		os.write(header.array(), 0, header.position());
+		
+		
+		ByteBuffer content = ByteBuffer.allocate(MAX_DISTANCE).order(ByteOrder.LITTLE_ENDIAN);
+		ByteBuffer BlockLength = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN);
+		byte[] toWrite = null;
 		byte[] content_out = new byte[MAX_DISTANCE + (MAX_DISTANCE/255) + 16];
+		int frameMask;
 		int readByte;
 		while ((readByte = is.read()) != -1) {
-		      os.write(readByte);
-		    }
-		os.flush();
+		      content.put((byte) readByte);
+		}
+		int compressedLength = packBlock(content.array(), content.position(),content_out );
+		if (compressedLength >= content.position()) {
+		      compressedLength = content.position();
+		      toWrite = Arrays.copyOf(content.array(), compressedLength);
+		      frameMask = INCOMPRESSIBLE;
+		    } else {
+		    	toWrite = content_out;
+		    	frameMask = 0;
+		}
 		
-		
+		BlockLength.putInt(0, compressedLength | frameMask); // ierakstam cik daudz baitus aiznem ievaditais saturs | ierakstam pazimi ka ir/nav saspiests
+	    os.write(BlockLength.array());
+	    os.write(toWrite, 0, compressedLength); // ierakstam saspiesto saturu
+	    BlockLength.putInt(0, 0); // freims beidzas ar 4 tukshiem baitiem
+	    os.write(BlockLength.array()); // ierakstam EndMark(tukshos baitus)
+	    
+		is.close();
+		os.close();
 		
 	}
+
 	
-	
+
+
 	// faila dekodÄ“Å¡anas funkcija:
-	public void fileDecoder() {
-		
+	public static void fileDecoder(String InFilePath, String OutFileName) throws IOException {
+		// Atver failu lasÄ«Å¡anai:				
+				// Lasa info no faila:
+				String content = null;
+				byte[] cont = readLineByLineJava8(InFilePath);
+			    
+				// byte[], kur tiks izvadÄ«ts saturs;
+				byte[] content_out = new byte[999999999];
+				
+				LZ4 comp = new LZ4();
+				comp.unpackBlock(cont, cont.length, content_out);
+				FileWriter wr=null;
+				wr= new FileWriter(OutFileName);
+				wr.write(new String(content_out, StandardCharsets.UTF_8));
+				wr.close();
 	}
 	
-	public static void main(String[] args) throws IOException {
-			
-		byte[] data2 = "Drumstalām miltus sajauc ar cukuriem, kanēli, sāli, tad pievieno mīkstu sviestu un visu labi samīci, ieliec ledusskapī uz vismaz 30 minūtēm, tad veido drumstalas, plucinot mīklu pa maziem gabaliņiem un ber uz izceptās ābolkūkas. Pēc tam kūku cep vēl 15–20 minūtes.".getBytes("UTF-8");
-		
-		
-		
-		// byte[], kur tiks izvadÄ«ts saturs;
-		byte[] content_out = new byte[MAX_DISTANCE + (MAX_DISTANCE/255) + 16];
-		ByteBuffer test = ByteBuffer.allocate(data2.length).order(ByteOrder.LITTLE_ENDIAN);
-		test.put(data2);
-		int compressedLength = packBlock(test.array(), content_out);
-		FileOutputStream fos = new FileOutputStream(new File("test.lz4"));
-		fos.write(content_out, 0, compressedLength);
-		fos.close();
-		
-	}
 	
+    private static byte[] readLineByLineJava8(String filePath) throws IOException 
+    {
+    	File file = new File(filePath);
+    	  //init array with file length
+    	  byte[] bytesArray = new byte[(int) file.length()]; 
+
+    	  FileInputStream fis = new FileInputStream(file);
+    	  fis.read(bytesArray); //read file into bytes[]
+    	  fis.close();
+    				
+    	  return bytesArray;
+    }
+    
+    private static String readAllBytesJava7(String filePath) 
+    {
+        String content = "";
+        try
+        {
+            content = new String ( Files.readAllBytes( Paths.get(filePath) ) );
+        } 
+        catch (IOException e) 
+        {
+            e.printStackTrace();
+        }
+        return content;
+    }
 }
+
